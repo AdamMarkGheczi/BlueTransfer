@@ -1,20 +1,5 @@
-import os
-import socket
+from os import path
 from struct import pack, unpack
-
-file_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-file_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-file_receiver_socket.setblocking(False)
-file_receiver_socket.bind(("0.0.0.0", 15555))
-
-info_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-info_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-info_receiver_socket.setblocking(True)
-info_receiver_socket.bind(("0.0.0.0", 15556))
-info_receiver_socket.listen()
-
 
 def create_file_info_header(fileName, fileSize):
     fileName_bytes = fileName.encode('utf-8')
@@ -24,9 +9,6 @@ def create_file_info_header(fileName, fileSize):
 
     return header
 
-
-# file_sender_socket.connect(remoteAddr)
-# file = open(file_path, "rb")
 
 def ReceiveFileInfoHeader(receiver_socket):
     other_socket, addr = receiver_socket.accept()
@@ -48,10 +30,8 @@ def ReceiveFileInfoHeader(receiver_socket):
 
     return filename, fileSize
 
-ReceiveFileInfoHeader(info_receiver_socket)
-
-def send_transfer_request(ip, file_path):
-    file_size = os.path.getsize(file_path)
-    file_name = os.path.basename(file_path)
-    info_sender_socket.connect((ip, 15556))
-    info_sender_socket.send(create_file_info_header(file_name, file_size))
+def send_transfer_request(sender_socket, ip, file_path):
+    file_size = path.getsize(file_path)
+    file_name = path.basename(file_path)
+    sender_socket.connect((ip, 15556))
+    sender_socket.send(create_file_info_header(file_name, file_size))

@@ -1,10 +1,25 @@
 import customtkinter
 from tkinter import filedialog
 import connection
-
+import socket
 
 customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("dark-blue")
+
+# file = open(file_path, "rb")
+
+file_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+file_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+file_receiver_socket.setblocking(False)
+file_receiver_socket.bind(("0.0.0.0", 15555))
+
+info_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+info_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+info_receiver_socket.setblocking(True)
+info_receiver_socket.bind(("0.0.0.0", 15556))
+info_receiver_socket.listen()
 
 
 class TransferApp:
@@ -68,7 +83,7 @@ class TransferApp:
 
     file_id = 0
     def create_file_sender_window(self):
-        file_path = ""
+        self.file_path = ""
         transfer_window = customtkinter.CTkToplevel(self.root)
         transfer_window.title("Initiate Transfer")
         transfer_window.geometry("400x300")
@@ -83,7 +98,7 @@ class TransferApp:
             path = filedialog.askopenfilename()
             if path:
                 file_label.configure(text=f"Selected File: {path}")
-                file_path = path
+                self.file_path = path
 
 
         browse_button = customtkinter.CTkButton(transfer_window, text="Browse File", command=browse_file)
@@ -99,12 +114,12 @@ class TransferApp:
         status_label.pack(pady=10, padx=10, fill="x")
 
         def initiate_connection():
-            if not file_path or not ip_entry.get():
+            if not self.file_path or not ip_entry.get():
                 status_label.configure(text="Status: Please select a file and enter a valid IP address.")
             else:
                 try:
                     status_label.configure(text=f"Status: Sending transfer request...")
-                    connection.send_transfer_request(ip=ip_entry.get(), file_path=file_path)
+                    connection.send_transfer_request(info_sender_socket, ip_entry.get(), self.file_path)
                 except Exception as e:
                     status_label.configure(text=f"Status: Error - {str(e)}")
                     
@@ -125,7 +140,6 @@ class TransferApp:
             del self.file_entries[file_id]
 
 
-# Create and run the application
 root = customtkinter.CTk()
 app = TransferApp(root)
 root.mainloop()
