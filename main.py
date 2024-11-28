@@ -1,26 +1,17 @@
 import customtkinter
 from tkinter import filedialog
 import connection
-import socket
+import queue
 
 customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("dark-blue")
 
 # file = open(file_path, "rb")
 
-file_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-file_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-file_receiver_socket.setblocking(False)
-file_receiver_socket.bind(("0.0.0.0", 15555))
+info_queue = queue.Queue()
 
-info_sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-info_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-info_receiver_socket.setblocking(True)
-info_receiver_socket.bind(("0.0.0.0", 15556))
-info_receiver_socket.listen()
-
+connection.initialise_receiver_sockets(info_queue)
 
 class TransferApp:
     def __init__(self, root):
@@ -81,6 +72,20 @@ class TransferApp:
         self.receiving_list = customtkinter.CTkScrollableFrame(self.receiving_frame, width=350)
         self.receiving_list.grid(row=1, column=0, sticky="nsew", pady=10, padx=10)
 
+        # self.check_queue()
+
+
+    def check_queue(self):
+        while not info_queue.empty():
+            info, addr = info_queue.get()
+            # Process the info and update the UI
+            # Example: Add a new entry to the receiving list
+            label = customtkinter.CTkLabel(self.receiving_list, text=f"From {addr}: {info}")
+            label.pack(pady=5)
+
+        # Schedule the next check
+        self.root.after(100, self.check_queue)
+
     file_id = 0
     def create_file_sender_window(self):
         self.file_path = ""
@@ -113,19 +118,18 @@ class TransferApp:
         status_label = customtkinter.CTkLabel(transfer_window, text="Status: Waiting for input", anchor="w", wraplength=380)
         status_label.pack(pady=10, padx=10, fill="x")
 
-        def initiate_connection():
+        def transfer():
             if not self.file_path or not ip_entry.get():
                 status_label.configure(text="Status: Please select a file and enter a valid IP address.")
             else:
                 try:
                     status_label.configure(text=f"Status: Sending transfer request...")
-                    connection.send_transfer_request(info_sender_socket, ip_entry.get(), self.file_path)
+                    connection.transfer_file(ip_entry.get(), self.file_path)
                 except Exception as e:
                     status_label.configure(text=f"Status: Error - {str(e)}")
                     
-        request_button = customtkinter.CTkButton(transfer_window, text="Send transfer request", command=initiate_connection)
+        request_button = customtkinter.CTkButton(transfer_window, text="Transfer", command=transfer)
         request_button.pack(pady=10, padx=10)
-
 
     def update_file_status(self, file_id, new_status):
         if file_id in self.file_entries:
@@ -138,6 +142,7 @@ class TransferApp:
             file_entry = self.file_entries[file_id]
             file_entry["frame"].destroy()
             del self.file_entries[file_id]
+
 
 
 root = customtkinter.CTk()
