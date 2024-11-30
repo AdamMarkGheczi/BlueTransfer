@@ -72,18 +72,42 @@ class TransferApp:
         self.receiving_list = customtkinter.CTkScrollableFrame(self.receiving_frame, width=350)
         self.receiving_list.grid(row=1, column=0, sticky="nsew", pady=10, padx=10)
 
-        # self.check_queue()
+        self.check_queue()
+
+    def create_transfer_popup():
+        # Create a new popup window
+        popup = customtkinter.CTkToplevel()
+        popup.title("File Transfer Request")
+        popup.geometry("300x150")
+        popup.resizable(False, False)
+
+        message_label = customtkinter.CTkLabel(
+            popup, text="You have a file transfer request.\nDo you want to accept it?", justify="center"
+        )
+        message_label.pack(pady=20)
+
+        def on_accept():
+            print("Transfer Accepted!")
+            popup.destroy()
+
+        accept_button = customtkinter.CTkButton(popup, text="Accept", command=on_accept)
+        accept_button.pack(side="left", padx=20, pady=10)
+
+        def on_reject():
+            print("Transfer Rejected!")
+            popup.destroy()
+
+        reject_button = customtkinter.CTkButton(popup, text="Reject", command=on_reject)
+        reject_button.pack(side="right", padx=20, pady=10)
 
 
     def check_queue(self):
         while not info_queue.empty():
             info, addr = info_queue.get()
-            # Process the info and update the UI
-            # Example: Add a new entry to the receiving list
+
             label = customtkinter.CTkLabel(self.receiving_list, text=f"From {addr}: {info}")
             label.pack(pady=5)
 
-        # Schedule the next check
         self.root.after(100, self.check_queue)
 
     file_id = 0

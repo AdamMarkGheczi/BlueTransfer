@@ -2,12 +2,17 @@ import threading, json, socket
 from os import path
 from misc import sha1_chunks
 from enum import Enum
+import queue
 
-class packet(Enum):
+class packet_type(Enum):
     FILE_HEADER = 1
     TRANSFER_REJECT = 2
     TRANSFER_ACCEPT = 3
+    TRANSFER_PAUSED = 4
+    TRANSFER_CANCELLED = 5
 
+
+processed_info_queue = queue.Queue()
 
 def listen_for_info(info_receiver_socket, queue):
     info_receiver_socket.listen()
@@ -21,7 +26,8 @@ def receive_info(socket, addr, queue):
     packet = socket.recv(packet_length).decode("utf-8")
 
     info = json.loads(packet)
-    queue.put((info, addr))
+    info["type"] = packet_type(info["type"])
+    queue.put((info, addr, socket))
 
 
 def create_file_info_header(file_path):
@@ -30,7 +36,7 @@ def create_file_info_header(file_path):
     file_hash = sha1_chunks(file_path)
 
     data = {
-        "type": packet.FILE_HEADER,
+        "type": packet_type.FILE_HEADER.value,
         "file_name": file_name,
         "file_size": file_size,
         "sha1": file_hash
@@ -43,7 +49,7 @@ def transfer_file(ip, file_path):
     def transfer_thread():
         sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         response = send_transfer_request(sender_socket, ip, file_path)
-        if response["type"] == packet.TRANSFER_REJECT:
+        if response["type"] == packet_type.TRANSFER_REJECT:
             print("Transfer rejected")
         else:
             print("Transfer accepted")
@@ -63,6 +69,7 @@ def send_transfer_request(sender_socket, ip, file_path):
     packet = sender_socket.recv(packet_length).decode("utf-8")
 
     info = json.loads(packet)
+    info["type"] = packet_type(info["type"])
     return info
 
 
