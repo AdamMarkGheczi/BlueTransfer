@@ -9,9 +9,9 @@ customtkinter.set_default_color_theme("dark-blue")
 # file = open(file_path, "rb")
 
 
-info_queue = queue.Queue()
+ui_queue = queue.Queue()
 
-connection.initialise_receiver_sockets(info_queue)
+connection.initialise_receiver_sockets(ui_queue)
 
 class TransferApp:
     def __init__(self, root):
@@ -48,10 +48,6 @@ class TransferApp:
         sending_label = customtkinter.CTkLabel(self.sending_frame, text="SENDING", font=("Arial", 18, "bold"))
         sending_label.grid(row=0, column=0, sticky="w", pady=(10, 5), padx=(10, 0))
 
-        # Entry for IP Address
-        self.ip_entry = customtkinter.CTkEntry(self.sending_frame, placeholder_text="Enter IP Address")
-        self.ip_entry.grid(row=0, column=1, sticky="e", padx=10, pady=(10, 5))
-
         self.add_send_button = customtkinter.CTkButton(
             self.sending_frame, text="Send new file...", command=self.create_file_sender_window
         )
@@ -76,12 +72,11 @@ class TransferApp:
 
     def create_transfer_request_popup(self, info, socket):
         popup = customtkinter.CTkToplevel()
-        popup.attributes('-topmost', True)
         popup.title("File Transfer Request")
         popup.geometry("450x150")
         popup.resizable(False, False)
-        popup.after(10, lambda: (popup.focus_force()))
-        print(info)
+        popup.after(100, lambda: (popup.focus_force()))
+        
         message = f"{socket.getpeername()[0]} sent you a transfer request!\nFile: {info["file_name"]}\nSize: {convert_file_size(info["file_size"])}\nSHA-1: {info["sha1"]}"
 
         message_label = customtkinter.CTkLabel(
@@ -90,14 +85,19 @@ class TransferApp:
         message_label.pack(pady=20)
 
         def on_accept():
-            connection.processed_info_queue.put((connection.packet_type.TRANSFER_ACCEPT, socket))
-            popup.destroy()
+            path = filedialog.askdirectory()
+            if path:
+                connection.permitted_ips[socket.getpeername()[0]] = f"{path}/{info["file_name"]}"
+                connection.send_response(connection.packet_type.TRANSFER_ACCEPT, socket)
+                socket.close()
+                popup.destroy()
 
         accept_button = customtkinter.CTkButton(popup, text="Accept", command=on_accept)
         accept_button.pack(side="left", padx=20, pady=10)
 
         def on_reject():
-            connection.processed_info_queue.put((connection.packet_type.TRANSFER_REJECT, socket))
+            connection.send_response(connection.packet_type.TRANSFER_REJECT, socket)
+            socket.close()
             popup.destroy()
         
         popup.protocol("WM_DELETE_WINDOW", on_reject)
@@ -105,13 +105,18 @@ class TransferApp:
         reject_button = customtkinter.CTkButton(popup, text="Reject", command=on_reject)
         reject_button.pack(side="right", padx=20, pady=10)
 
-    def check_queue(self):
-        while not info_queue.empty():
-            (info, socket) = info_queue.get()
-            if info["type"] == connection.packet_type.FILE_HEADER:
-                self.create_transfer_request_popup(info, socket)
+    def transfer_request_rejected_notification(self, info):
+        popup = customtkinter.CTkToplevel()
+        popup.title("File Transfer Request Rejected")
+        popup.geometry("450x150")
+        popup.resizable(False, False)
+        popup.after(10, lambda: (popup.focus_force()))
+        
+        message = f"{info["ip"]} rejected your transfer request!"
 
-        self.root.after(100, self.check_queue)
+        message_label = customtkinter.CTkLabel(popup, text=message, justify="left")
+        message_label.pack(pady=20)
+
 
     file_id = 0
     def create_file_sender_window(self):
@@ -119,17 +124,20 @@ class TransferApp:
         transfer_window = customtkinter.CTkToplevel(self.root)
         transfer_window.title("Initiate Transfer")
         transfer_window.geometry("400x320")
-        
+        main_x = self.root.winfo_rootx()
+        main_y = self.root.winfo_rooty()
+        transfer_window.geometry(f"+{main_x + 100}+{main_y-10}")
+
         transfer_window.after(10, lambda: (transfer_window.focus_force()))
 
-        file_label = customtkinter.CTkLabel(transfer_window, text="Selected File: None", wraplength=380, anchor="w", justify="left")
+        file_label = customtkinter.CTkLabel(transfer_window, text="Selected File: None", wraplength=380, anchor="n", justify="center")
         file_label.pack(pady=10, padx=10, fill="x")
 
         def browse_file():
             path = filedialog.askopenfilename()
             transfer_window.focus_force()
             if path:
-                file_label.configure(text=f"Selected File: {path}")
+                file_label.configure(text=f"{path}")
                 self.file_path = path
 
 
@@ -142,7 +150,7 @@ class TransferApp:
         ip_entry = customtkinter.CTkEntry(transfer_window, placeholder_text="ipv4")
         ip_entry.pack(pady=10, padx=10)
 
-        status_label = customtkinter.CTkLabel(transfer_window, text="Status: Waiting for input", anchor="w", wraplength=380)
+        status_label = customtkinter.CTkLabel(transfer_window, text="Status: Waiting for input", anchor="n", wraplength=380)
         status_label.pack(pady=10, padx=10, fill="x")
 
         def transfer():
@@ -150,8 +158,8 @@ class TransferApp:
                 status_label.configure(text="Status: Please select a file and enter a valid IP address.")
             else:
                 try:
-                    status_label.configure(text=f"Status: Sending transfer request...")
-                    connection.transfer_file(ip_entry.get(), self.file_path)
+                    status_label.configure(text="Status: Transfer request sent...")
+                    connection.initiate_transfer(ip_entry.get(), self.file_path, ui_queue)
                 except Exception as e:
                     status_label.configure(text=f"Status: Error - {str(e)}")
                     
@@ -170,7 +178,16 @@ class TransferApp:
             file_entry["frame"].destroy()
             del self.file_entries[file_id]
 
+    def check_queue(self):
+        while not ui_queue.empty():
+            (info, socket) = ui_queue.get()
+            if info["type"] == connection.packet_type.FILE_HEADER:
+                self.create_transfer_request_popup(info, socket)
+            if info["type"] == connection.packet_type.TRANSFER_REJECT:
+                self.transfer_request_rejected_notification(info)
 
+
+        self.root.after(100, self.check_queue)
 
 root = customtkinter.CTk()
 app = TransferApp(root)
