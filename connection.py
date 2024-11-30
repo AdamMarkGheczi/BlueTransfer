@@ -17,17 +17,17 @@ processed_info_queue = queue.Queue()
 def listen_for_info(info_receiver_socket, queue):
     info_receiver_socket.listen()
     while True:
-        other_socket, addr = info_receiver_socket.accept()
-        threading.Thread(target=receive_info, args=(other_socket, addr, queue)).start()
+        other_socket, _ = info_receiver_socket.accept()
+        threading.Thread(target=receive_info, args=(other_socket, queue)).start()
 
 
-def receive_info(socket, addr, queue):
+def receive_info(socket, queue):
     packet_length = int.from_bytes(socket.recv(4), byteorder='big')
     packet = socket.recv(packet_length).decode("utf-8")
 
     info = json.loads(packet)
     info["type"] = packet_type(info["type"])
-    queue.put((info, addr, socket))
+    queue.put((info, socket))
 
 
 def create_file_info_header(file_path):
@@ -72,7 +72,19 @@ def send_transfer_request(sender_socket, ip, file_path):
     info["type"] = packet_type(info["type"])
     return info
 
-
+def watch_processed_queue() :
+    while True:
+        if not processed_info_queue.empty():
+            (response, socket) = processed_info_queue.get()
+        
+            if response == packet_type.TRANSFER_ACCEPT:
+                print("Transfer accepted")
+            if response == packet_type.TRANSFER_REJECT:
+                print("Transfer rejected")
+            if response == packet_type.TRANSFER_CANCELLED:
+                print("Transfer cancelled")
+            if response == packet_type.TRANSFER_PAUSED:
+                print("Transfer paused")
 
 def initialise_receiver_sockets(queue):
     file_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -85,3 +97,4 @@ def initialise_receiver_sockets(queue):
 
     threading.Thread(target=listen_for_info, args=(info_receiver_socket, queue), daemon=True).start()
     # threading.Thread(target=listen_for_transfer, args=(file_receiver_socket,), daemon=True)
+    # queue handler

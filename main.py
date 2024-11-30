@@ -2,7 +2,7 @@ import customtkinter
 from tkinter import filedialog
 import connection
 import queue
-
+from misc import convert_file_size
 customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("dark-blue")
 
@@ -74,39 +74,42 @@ class TransferApp:
 
         self.check_queue()
 
-    def create_transfer_popup():
-        # Create a new popup window
+    def create_transfer_request_popup(self, info, socket):
         popup = customtkinter.CTkToplevel()
+        popup.attributes('-topmost', True)
         popup.title("File Transfer Request")
-        popup.geometry("300x150")
+        popup.geometry("450x150")
         popup.resizable(False, False)
+        popup.after(10, lambda: (popup.focus_force()))
+        print(info)
+        message = f"{socket.getpeername()[0]} sent you a transfer request!\nFile: {info["file_name"]}\nSize: {convert_file_size(info["file_size"])}\nSHA-1: {info["sha1"]}"
 
         message_label = customtkinter.CTkLabel(
-            popup, text="You have a file transfer request.\nDo you want to accept it?", justify="center"
+            popup, text=message, justify="left"
         )
         message_label.pack(pady=20)
 
         def on_accept():
-            print("Transfer Accepted!")
+            connection.processed_info_queue.put((connection.packet_type.TRANSFER_ACCEPT, socket))
             popup.destroy()
 
         accept_button = customtkinter.CTkButton(popup, text="Accept", command=on_accept)
         accept_button.pack(side="left", padx=20, pady=10)
 
         def on_reject():
-            print("Transfer Rejected!")
+            connection.processed_info_queue.put((connection.packet_type.TRANSFER_REJECT, socket))
             popup.destroy()
+        
+        popup.protocol("WM_DELETE_WINDOW", on_reject)
 
         reject_button = customtkinter.CTkButton(popup, text="Reject", command=on_reject)
         reject_button.pack(side="right", padx=20, pady=10)
 
-
     def check_queue(self):
         while not info_queue.empty():
-            info, addr = info_queue.get()
-
-            label = customtkinter.CTkLabel(self.receiving_list, text=f"From {addr}: {info}")
-            label.pack(pady=5)
+            (info, socket) = info_queue.get()
+            if info["type"] == connection.packet_type.FILE_HEADER:
+                self.create_transfer_request_popup(info, socket)
 
         self.root.after(100, self.check_queue)
 
@@ -115,16 +118,16 @@ class TransferApp:
         self.file_path = ""
         transfer_window = customtkinter.CTkToplevel(self.root)
         transfer_window.title("Initiate Transfer")
-        transfer_window.geometry("400x300")
+        transfer_window.geometry("400x320")
         
-        transfer_window.attributes('-topmost', True)
-        transfer_window.update()
+        transfer_window.after(10, lambda: (transfer_window.focus_force()))
 
         file_label = customtkinter.CTkLabel(transfer_window, text="Selected File: None", wraplength=380, anchor="w", justify="left")
         file_label.pack(pady=10, padx=10, fill="x")
 
         def browse_file():
             path = filedialog.askopenfilename()
+            transfer_window.focus_force()
             if path:
                 file_label.configure(text=f"Selected File: {path}")
                 self.file_path = path
