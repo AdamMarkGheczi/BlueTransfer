@@ -11,6 +11,9 @@ customtkinter.set_default_color_theme("dark-blue")
 
 ui_queue = queue.Queue()
 
+sending_ui_labels = {}
+receiving_ui_labels = {}
+
 connection.initialise_receiver_sockets(ui_queue)
 
 class TransferApp:
@@ -68,7 +71,7 @@ class TransferApp:
         self.receiving_list = customtkinter.CTkScrollableFrame(self.receiving_frame, width=350)
         self.receiving_list.grid(row=1, column=0, sticky="nsew", pady=10, padx=10)
 
-        self.check_queue()
+        self.check_queue_and_update_transfers()
 
     def create_transfer_request_popup(self, info, socket):
         popup = customtkinter.CTkToplevel()
@@ -77,7 +80,11 @@ class TransferApp:
         popup.resizable(False, False)
         popup.after(100, lambda: (popup.focus_force()))
         
-        message = f"{socket.getpeername()[0]} sent you a transfer request!\nFile: {info["file_name"]}\nSize: {convert_file_size(info["file_size"])}\nSHA-1: {info["sha1"]}"
+        ip = socket.getpeername()[0]
+        file_name = info["file_name"]
+        file_size = convert_file_size(info["file_size"])
+        hash = info["sha1"]
+        message = f"{ip} sent you a transfer request!\nFile: {file_name}\nSize: {file_size}\nSHA-1: {hash}"
 
         message_label = customtkinter.CTkLabel(
             popup, text=message, justify="left"
@@ -87,9 +94,10 @@ class TransferApp:
         def on_accept():
             path = filedialog.askdirectory()
             if path:
-                connection.permitted_ips[socket.getpeername()[0]] = f"{path}/{info["file_name"]}"
+                connection.add_to_active_inbound_transfers(socket.getpeername()[0], info["file_name"], info["file_size"], info["sha1"], f"{path}/{info["file_name"]}")
                 connection.send_response(connection.packet_type.TRANSFER_ACCEPT, socket)
                 socket.close()
+                self.add_transfering_file(ip, hash, receiving=True)
                 popup.destroy()
 
         accept_button = customtkinter.CTkButton(popup, text="Accept", command=on_accept)
@@ -166,11 +174,53 @@ class TransferApp:
         request_button = customtkinter.CTkButton(transfer_window, text="Transfer", command=transfer)
         request_button.pack(pady=10, padx=10)
 
-    def update_file_status(self, file_id, new_status):
-        if file_id in self.file_entries:
-            file_entry = self.file_entries[file_id]
-            file_entry["status"] = new_status
-            file_entry["label"].configure(text=f"{file_entry['label'].cget('text')}\nStatus: {new_status}")
+    def add_transfering_file(self, ip, reference_hash, receiving):
+        if receiving:
+            frame = customtkinter.CTkFrame(self.receiving_list)
+        else:
+            frame = customtkinter.CTkFrame(self.sending_list)
+
+        frame.pack(fill="x", padx=5, pady=5)
+
+        file_label = customtkinter.CTkLabel(frame, text="FileName1\nSha-256: 12345...\n500MB/1.17GB 30MB/s", anchor="w", justify="left")
+        file_label.pack(side="left", fill="x", expand=True, padx=5)
+
+        stop_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=lambda: self.pause_transfer(ip, reference_hash, stop_button, from_sending_peer=True))
+        stop_button.pack(side="right", padx=5)
+
+        delete_button = customtkinter.CTkButton(frame, text="Cancel", width=50)
+        delete_button.pack(side="right", padx=5)
+
+        if receiving:
+            receiving_ui_labels[(ip, reference_hash)] = file_label
+        else:
+            sending_ui_labels[(ip, reference_hash)] = file_label
+
+    def update_file_statuses_ui(self):
+        for (ip, reference_hash), label in sending_ui_labels.items():
+            file_name = connection.active_outbound_transfers[ip][reference_hash]["file_name"]
+            file_size = connection.active_outbound_transfers[ip][reference_hash]["file_size"]
+            file_hash = reference_hash
+
+            info_text=f"{file_name}\nSha-1: {file_hash}\n -MB/{convert_file_size(file_size)} -MB/s"
+
+            label.configure(text=info_text)
+
+        for (ip, reference_hash), label in receiving_ui_labels.items():
+            file_name = connection.active_inbound_transfers[ip][reference_hash]["file_name"]
+            file_size = connection.active_inbound_transfers[ip][reference_hash]["file_size"]
+            file_hash = reference_hash
+
+            info_text=f"{file_name}\nSha-1: {file_hash}\n -MB/{convert_file_size(file_size)} -MB/s"
+
+            label.configure(text=info_text)
+
+    def pause_transfer(ip, reference_hash, stop_button, from_sending_peer):
+        connection.toggle_transfer_pause(ip, reference_hash, from_sending_peer=from_sending_peer)
+        if stop_button["text"] == "Pause":
+            stop_button.configure(text="Resume")
+        else:
+            stop_button.configure(text="Pause")
 
     def delete_file(self, file_id):
         if file_id in self.file_entries:
@@ -178,16 +228,26 @@ class TransferApp:
             file_entry["frame"].destroy()
             del self.file_entries[file_id]
 
-    def check_queue(self):
+    def check_queue_and_update_transfers(self):
         while not ui_queue.empty():
             (info, socket) = ui_queue.get()
             if info["type"] == connection.packet_type.FILE_HEADER:
                 self.create_transfer_request_popup(info, socket)
             if info["type"] == connection.packet_type.TRANSFER_REJECT:
                 self.transfer_request_rejected_notification(info)
+            if info["type"] == connection.packet_type.TRANSFER_ACCEPT:
+                self.add_transfering_file(info["ip"], info["reference_hash"], receiving=False)
+            if info["type"] == connection.packet_type.TRANSFER_FINISHED or info["type"] == connection.packet_type.TRANSFER_CANCELLED:
+                ip = info["ip"]
+                reference_hash = info["reference_hash"]
+                if info["receiving"]:
+                    del receiving_ui_labels[(ip,reference_hash)]
+                else:
+                    del sending_ui_labels[(ip,reference_hash)]
 
+        self.update_file_statuses_ui()
 
-        self.root.after(100, self.check_queue)
+        self.root.after(100, self.check_queue_and_update_transfers)
 
 root = customtkinter.CTk()
 app = TransferApp(root)
