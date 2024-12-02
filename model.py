@@ -10,6 +10,9 @@ class Model:
         self.port = port
         self.transfers = {}
         self.transfer_id = 0
+        self.listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener_socket.setblocking(True)
+        self.listener_socket.bind(("0.0.0.0", port))
 
     class __message_type(Enum):
         TRANSFER_REQUEST = 1
@@ -21,49 +24,60 @@ class Model:
         TRANSFER_CANCEL = 7
         TRANSFER_FINISH = 8
 
+    def __add_transfer(self, uuid, ip, file_name, file_size, file_hash):
+        transfer = {
+            "transfer_id": uuid,
+            "ip": ip,
+            "file_name": file_name,
+            "file_size": file_size,
+            "is_outbound": True,
+            "transfer_speed": 0,
+            "transferred": 0,
+            "path": "",
+            "hash": file_hash,
+            "status": self.__message_type.TRANSFER_REQUEST,
+            "socket": socket,
+            "pause_condition": threading.Condition(),
+            "file_handle": None,
+        }
+
+        self.transfers[uuid] = transfer
+
     def listen_for_connections(self, listener_socket):
         listener_socket.listen()
         while True:
             other_socket, addr = listener_socket.accept()
-            threading.Thread(target=self.__handle_connection, args=(other_socket, addr)).start()
+            threading.Thread(target=self.__responde_to_messages, args=(other_socket, addr)).start()
 
-    def __handle_connection(self, socket, addr):
+    def __decode_packet(self, socket):
+        """Returns packet_type, transfer_id, packet_payload"""
+        # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
+        packet = socket.recv(1 + 128 + 4) 
+        packet_type, transfer_id, payload_length = struct.unpack('!B16sI', packet)
+        packet_type = self.__message_type(packet_type)
+        packet_payload = socket.recv(payload_length)
+
+        return packet_type, transfer_id, packet_payload
+
+    def __responde_to_messages(self, connected_socket, addr):
+        """A generic function for handling the reception of all types of packets"""
         while True:
             try:
-                header = socket.recv(1 + 128 + 4) 
-                # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
-
-                packet_type, transfer_id, packet_length = struct.unpack('!B16sI', header)
-                packet_type = self.__message_type(packet_type)
-                packet_payload = socket.recv(packet_length)
+                packet_type, transfer_id, packet_payload = self.__decode_packet(connected_socket)
 
                 if packet_type == self.__message_type.TRANSFER_REQUEST:
                     packet_payload = json.loads(packet_payload)
 
-                    transfer = {
-                        "transfer_id": transfer_id,
-                        "ip": addr[0],
-                        "file_name": packet_payload["file_name"],
-                        "file_size": packet_payload["file_size"],
-                        "is_outbound": True,
-                        "transfer_speed": 0,
-                        "transferred": 0,
-                        "path": "",
-                        "hash": packet_payload["hash"],
-                        "status": self.__message_type.TRANSFER_REQUEST,
-                        "pause_condition": threading.Condition(),
-                        "file_handle": None,
-                    }
+                    self.__add_transfer(transfer_id, addr[0], packet_payload["file_name"], packet_payload["file_size"], packet_payload["file_has"])
 
-                    self.presenter.present_incoming_transfer_request(transfer)
-
+                    self.presenter.present_incoming_transfer_request(self.transfers[transfer_id])
+                
                 if packet_type == self.__message_type.TRANSFER_PACKET:
-                    transfer[transfer_id]["file_handle"].write(packet_payload)
-                    transfer[transfer_id]["transferred"] += len(packet_payload)
+                    self.transfers[transfer_id]["file_handle"].write(packet_payload)
+                    self.transfers[transfer_id]["transferred"] += len(packet_payload)
 
                 if packet_type == self.__message_type.TRANSFER_PAUSE:
                     self.transfers[transfer_id]["status"] = self.__message_type.TRANSFER_PAUSE
-                    self.transfers[transfer_id]["pause_condition"].wait()
 
                 if packet_type == self.__message_type.TRANSFER_RESUME:
                     self.transfers[transfer_id]["status"] = self.__message_type.TRANSFER_RESUME
@@ -71,24 +85,24 @@ class Model:
 
                 if packet_type == self.__message_type.TRANSFER_CANCEL:
                     self.transfers[transfer_id]["status"] = self.__message_type.TRANSFER_CANCEL
-                    transfer[transfer_id]["file_handle"].close()
+                    self.transfers[transfer_id]["file_handle"].close()
                     break
 
                 if packet_type == self.__message_type.TRANSFER_FINISH:
                     self.transfers[transfer_id]["status"] = self.__message_type.TRANSFER_FINISH
-                    transfer[transfer_id]["file_handle"].close()
+                    self.transfers[transfer_id]["file_handle"].close()
                     break
 
                     # maybe check hash
 
             # TODO: more rigorous exception handling
             except Exception as e:
-                transfer[transfer_id]["file_handle"].close()
+                self.transfers[transfer_id]["file_handle"].close()
                 self.presenter.esception_happened(e)
                 break
 
     def __create_file_info_header_packet(self, file_path):
-        """Returns the header and its uuid"""
+        """Returns the header, uuid, file_name, file_size, file_hash"""
         file_name = path.basename(file_path)
         file_size = path.getsize(file_path)
         file_hash = sha1_chunks(file_path)
@@ -113,144 +127,65 @@ class Model:
 
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
-        header = struct.pack("!B16sI", type, uuid, 1, 0) # a payload of length 1, which will be discarded
+        header = struct.pack("!B16sI", type, uuid, 0)
         return header
 
-    def transfer_file(self, connected_socket, ip, file_path):
+    def __create_transfer_packet_header(self, uuid, payload_length):
+        # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
+        header = struct.pack("!B16sI", type, uuid, payload_length)
+        return header
+    
+    def __transfer_file(self, connected_socket, uuid, file_path):
+        chunk_size = 4096
+        header = self.__create_transfer_packet_header(uuid, chunk_size)
         with open(file_path, 'rb') as file:
-            while chunk := file.read(8192):
-                if ip in active_outbound_transfers:        
-                    if active_outbound_transfers[ip][reference_hash]["control_flag"] == self.message_type.TRANSFER_CANCEL:
-                        break
-                    
-                    if active_outbound_transfers[ip][reference_hash]["control_flag"] == self.message_type.TRANSFER_PAUSE:
+            while chunk := file.read(chunk_size):
+                if self.transfers[uuid]["status"] == self.__message_type.TRANSFER_CANCEL:
+                    break
 
-                        with active_outbound_transfers[ip][reference_hash]["pausing_condition"]:
-                            active_outbound_transfers[ip][reference_hash]["pausing_condition"].wait()
+                if self.transfers[uuid]["staus"] == self.message_type.TRANSFER_PAUSE:
+                    self.transfers[uuid]["pause_condition"].wait()
 
-                sender_socket.send(chunk)
+                connected_socket.send(header + chunk)
+                self.transfers[uuid]["transferred"] += len(chunk)
 
-        if active_outbound_transfers[ip][reference_hash]["control_flag"] == self.message_type.TRANSFER_CANCEL:  
-            del active_outbound_transfers[ip][reference_hash]
-            if not active_outbound_transfers[ip]:
-                del active_outbound_transfers[ip]
-        else:
-            sender_socket.close()
+    def initiate_transfer(self, ip, file_path):
 
-
-
-def initiate_transfer(ip, file_path, queue):
-    def transfer_thread():
         sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        response = send_transfer_request(sender_socket, ip, file_path)
-        sender_socket.close()
-        if response["type"] == self.message_type.TRANSFER_REJECT:
-            queue.put(({"type": self.message_type.TRANSFER_REJECT, "ip":ip}, None))
+        sender_socket.settimeout(60)
+        header, uuid, file_name, file_size, file_hash = self.__create_file_info_header_packet(file_path)
+        
+        self.__add_transfer(uuid, ip, file_name, file_size, file_hash)
+
+        sender_socket.connect((ip, self.port))
+        sender_socket.send(header)
+
+        packet_type, _, _ = self.__decode_packet(sender_socket)
+        
+        if packet_type == self.message_type.TRANSFER_REJECT:
+            self.presenter.present_rejected_transfer()
+            return
         else:
-            sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            file_name = path.basename(file_path)
-            file_size = path.getsize(file_path)
-            reference_hash = sha1_chunks(file_path)
-            add_to_active_outbound_transfers(ip, file_name, file_size, reference_hash, file_path)
+            threading.Thread(target=self.__transfer_file, args=(sender_socket, uuid, file_path), daemon=True).start()
+            threading.Thread(target=self.__responde_to_messages, args=(sender_socket, (ip, self.port)), daemon=True).start()
 
-            info = {
-                "type": self.message_type.TRANSFER_ACCEPT,
-                "ip":ip,
-                "reference_hash": reference_hash
-            }
+    def accept_transfer(self, uuid):
+        accept_packet = self.__create_transfer_control_packet(uuid, self.__message_type.TRANSFER_ACCEPT)
+        self.transfers[uuid]["status"] = self.__message_type.TRANSFER_ACCEPT
+        self.transfers[uuid]["socket"].send(accept_packet)
 
-            queue.put((info, None))
+    def cancel_transfer(self, uuid):
+        cancel_packet = self.__create_transfer_control_packet(uuid, self.__message_type.TRANSFER_CANCEL)
+        self.transfers[uuid]["status"] = self.__message_type.TRANSFER_CANCEL
+        self.transfers[uuid]["socket"].send(cancel_packet)
 
-            transfer_file(sender_socket, ip, file_path, reference_hash, queue)
+    def toggle_transfer_pause(self, uuid):
+        if self.transfers[uuid]["status"] == self.__message_type.TRANSFER_ACCEPT or self.transfers[uuid]["status"] == self.message_type.TRANSFER_RESUME:
+            self.transfers[uuid]["status"] = self.message_type.TRANSFER_PAUSE
+        else:
+            self.transfers[uuid]["status"] = self.message_type.TRANSFER_RESUME
+            self.transfers[uuid]["status"].notify()
 
-    threading.Thread(target=transfer_thread).start()
-
-
-def send_transfer_request(sender_socket, ip, file_path):
-    header = create_file_info_header(file_path)
-    
-    sender_socket.connect((ip, 15556))
-    sender_socket.send(len(header).to_bytes(4, byteorder='big'))
-    sender_socket.send(header)
-    
-    packet_length = int.from_bytes(sender_socket.recv(4), byteorder='big')
-    packet = sender_socket.recv(packet_length).decode("utf-8")
-
-    info = json.loads(packet)
-    info["type"] = self.message_type(info["type"])
-    return info
-
-def send_response(response_type, socket):
-    response = {
-        "type": response_type.value
-    }
-
-    response = json.dumps(response).encode("utf-8")
-    socket.send(len(response).to_bytes(4, byteorder='big'))
-    socket.send(response)
-
-def toggle_transfer_pause(ip, reference_hash, from_sending_peer):
-    response = None;
-    dict = None
-    if from_sending_peer:
-        dict = active_outbound_transfers
-    else:
-        dict = active_inbound_transfers
-
-    value = dict[ip][reference_hash]["control_flag"]
-
-    if value == self.message_type.TRANSFER_ACCEPT or value == self.message_type.TRANSFER_RESUME:
-        dict[ip][reference_hash]["control_flag"] = self.message_type.TRANSFER_PAUSE
-    else:
-        dict[ip][reference_hash]["control_flag"] = self.message_type.TRANSFER_RESUME
-        dict[ip][reference_hash]["pausing_condition"].notify()
-    
-
-    response = {
-        "type": dict[ip][reference_hash]["control_flag"].value,
-        "reference_hash": reference_hash
-    }
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((ip, 15556))
-    response = json.dumps(response).encode("utf-8")
-    s.send(len(response).to_bytes(4, byteorder='big'))
-    s.send(response)
-    s.close()
-
-def add_to_active_inbound_transfers(ip, file_name, file_size, hash, save_path):
-    if not ip in active_inbound_transfers:
-        active_inbound_transfers[ip] = {}
-    
-    active_inbound_transfers[ip][hash] = {
-        "file_name": file_name,
-        "file_size": file_size,
-        "save_path": save_path,
-        "control_flag": self.message_type.TRANSFER_ACCEPT,
-        "pausing_condition": threading.Condition()
-    } 
-
-def add_to_active_outbound_transfers(ip, file_name, file_size, hash, file_path):
-    if not ip in active_outbound_transfers:
-        active_outbound_transfers[ip] = {}
-    
-    active_outbound_transfers[ip][hash] = {
-        "file_name": file_name,
-        "file_size": file_size,
-        "file_path": file_path,
-        "control_flag": self.message_type.TRANSFER_ACCEPT,
-        "pausing_condition": threading.Condition()
-    } 
-
-def initialise_receiver_sockets(queue):
-    file_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    file_receiver_socket.setblocking(True)
-    file_receiver_socket.bind(("0.0.0.0", 15555))
-
-    info_receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    info_receiver_socket.setblocking(True)
-    info_receiver_socket.bind(("0.0.0.0", 15556))
-
-    threading.Thread(target=listen_for_info, args=(info_receiver_socket, queue), daemon=True).start()
-    threading.Thread(target=listen_for_transfer, args=(file_receiver_socket, queue), daemon=True).start()
+    def launch(self):
+        threading.Thread(target=self.listen_for_connections, args=(self.listener_socket), daemon=True).start()

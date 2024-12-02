@@ -34,6 +34,9 @@ class Presenter:
 
         self.view.create_transfer_request_popup(info)
 
+    def present_rejected_transfer(self):
+        pass
+
     def querry_transfer_statuses(self):
         pass
 
