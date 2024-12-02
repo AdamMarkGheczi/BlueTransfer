@@ -11,3 +11,4 @@ can you reach a vm?
 ping mode - after pinging can you contact a port on the dest ip that you *haven't* pinged
 process_transfer vége: send a confirmation and or check hash
 close transfer windows when transfer is accepted
+close sockets when app is closed
