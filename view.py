@@ -70,14 +70,14 @@ class TransferApp:
         message_label.pack(pady=20)
 
     def create_transfer_request_popup(self, info):
-        '''info dictionary: transfer_id, ip, file_name, file_size, hash'''
+        '''info dictionary: transfer_uuid, ip, file_name, file_size, hash'''
         popup = customtkinter.CTkToplevel()
         popup.title("File Transfer Request")
         popup.geometry(f"+{self.root.winfo_rootx() + 100}+{self.root.winfo_rooty() - 10}")
         popup.resizable(False, False)
         popup.after(100, lambda: (popup.focus_force()))
         
-        transfer_id = info["transfer_id"]
+        transfer_uuid = info["transfer_uuid"]
         ip = info["ip"]
         file_name = info["file_name"]
         file_size = convert_file_size(info["file_size"])
@@ -91,11 +91,11 @@ class TransferApp:
         def on_accept():
             path = filedialog.askdirectory()
             if path:
-                self.presenter.accept_inbound_transfer(transfer_id)
+                self.presenter.accept_inbound_transfer(transfer_uuid, path)
                 popup.destroy()
 
         def on_reject():
-            self.presenter.reject_inbound_transfer(transfer_id)
+            self.presenter.reject_inbound_transfer(transfer_uuid)
             popup.destroy()
 
         accept_button = customtkinter.CTkButton(popup, text="Accept", command=on_accept)
@@ -146,44 +146,48 @@ class TransferApp:
         request_button = customtkinter.CTkButton(file_sender_window, text="Transfer", command=send_transfer_request)
         request_button.pack(pady=10, padx=10)
 
-    def add_transferring_frame_to_ui(self, info):
-        '''info dictionary: transfer_id, ip, hash, file_name, file_size, is_outbound, status'''
+    def sync_transferring_frame_to_ui(self, info):
+        '''info dictionary: transfer_uuid, ip, hash, file_name, file_size, transfer_speed, transferred, is_outbound, status'''
 
-        transfer_id, ip, hash, file_name, file_size, is_outbound, status = info.values() # Adjust to info dict structure
+        transfer_uuid = info["transfer_uuid"]
+        ip = info["ip"]
+        hash = info["hash"]
+        file_name = info["file_name"]
+        file_size = info["file_size"]
+        transfer_speed = info["transfer_speed"]
+        transferred = info["transferred"]
+        is_outbound = info["is_outbound"]
+        status = info["status"]
 
-        if is_outbound:
-            frame = customtkinter.CTkFrame(self.sending_list)
+        if not self.transfer_frames[transfer_uuid].get():
+            if is_outbound:
+                frame = customtkinter.CTkFrame(self.sending_list)
+            else:
+                frame = customtkinter.CTkFrame(self.receiving_list)
+
+            self.transfer_frames[transfer_uuid] = frame
+            frame.pack(fill="x", padx=5, pady=5)
+
+            info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
+
+            info_label = customtkinter.CTkLabel(frame, text=info_text)
+            info_label.pack(side="left", fill="x", expand=True, padx=5)
+
+            pause_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=self.presenter.toggle_pause_transfer(info))
+            pause_button.pack(side="right", padx=5)
+
+            cancel_button = customtkinter.CTkButton(frame, text="Cancel", width=50, command=self.presenter.cancel_transfer(info))
+            cancel_button.pack(side="right", padx=5)
         else:
-            frame = customtkinter.CTkFrame(self.receiving_list)
+            info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
+            
+            frame = self.transfer_frames[transfer_uuid]
+            info_label = frame.children["info_label"]
+            info_label.configure(text=info_text)
 
-        self.transfer_frames[transfer_id] = frame
-        frame.pack(fill="x", padx=5, pady=5)
-
-        info_text = f"{file_name}\nFrom: {ip}\n0B/{convert_file_size(file_size)}\nSpeed: 0B/s\nSha-1: {hash}\nStatus: {status}"
-
-        info_label = customtkinter.CTkLabel(frame, text=info_text)
-        info_label.pack(side="left", fill="x", expand=True, padx=5)
-
-
-        pause_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=self.presenter.toggle_pause_transfer(info))
-        pause_button.pack(side="right", padx=5)
-
-        cancel_button = customtkinter.CTkButton(frame, text="Cancel", width=50, command=self.presenter.cancel_transfer(info))
-        cancel_button.pack(side="right", padx=5)
-
-    def update_transferring_frame_ui(self, info):
-        '''info dictionary: transfer_id, ip, hash, file_name, file_size, speed, transferred, status'''
-
-        transfer_id, ip, hash, file_name, file_size, speed, transferred, status = info.values() # Adjust to info dict structure
-        info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(speed)}/s\nSha-1: {hash}\nStatus: {status}"
-        
-        frame = self.transfer_frames[transfer_id]
-        info_label = frame.children["info_label"]
-        info_label.configure(text=info_text)
-
-    def delete_transferring_frame_ui(self, transfer_id):
-        self.transfer_frames[transfer_id].destroy()
-        del self.transfer_frames[transfer_id]
+    def delete_transferring_frame_ui(self, transfer_uuid):
+        self.transfer_frames[transfer_uuid].destroy()
+        del self.transfer_frames[transfer_uuid]
 
     def launch(self):
         self.root.mainloop()

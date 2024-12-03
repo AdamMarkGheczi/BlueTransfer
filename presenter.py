@@ -1,4 +1,5 @@
-import model, view
+import model, view, threading
+from os import path
 
 class Presenter:
     def __init__(self):
@@ -6,45 +7,67 @@ class Presenter:
         self.model = model.Model(self)
         
     # View
-    def accept_inbound_transfer(info):
-        pass
+    def accept_inbound_transfer(self, uuid, dir_path):
+        self.model.accept_transfer(uuid, dir_path)
 
-    def reject_inbound_transfer(info):
-        pass
+    def reject_inbound_transfer(self, uuid):
+        self.model.reject_transfer(uuid)
     
     def send_transfer_request(self, destination_ip, file_path):
-        pass
+        self.model.initiate_transfer(destination_ip, file_path)
 
-    def toggle_pause_transfer(self, info):
-        pass
+    def toggle_pause_transfer(self, uuid):
+        self.model.toggle_transfer_pause(uuid)
 
-    def cancel_transfer(self, info):
-        pass
+    def cancel_transfer(self, uuid):
+        self.model.cancel_transfer(uuid)
 
     # Model
-
-    def present_incoming_transfer_request(self, packet_payload):
+    def present_incoming_transfer_request(self, transfer):
         info = {
-            "transfer_id": packet_payload["transfer_id"],
-            "ip": packet_payload["ip"],
-            "file_name": packet_payload["file_name"],
-            "file_size": packet_payload["file_size"],
-            "hash": packet_payload["hash"]
+            "transfer_uuid": transfer["transfer_uuid"],
+            "ip": transfer["ip"],
+            "file_name": transfer["file_name"],
+            "file_size": transfer["file_size"],
+            "hash": transfer["hash"]
         }
 
         self.view.create_transfer_request_popup(info)
 
-    def present_rejected_transfer(self):
-        pass
+    def present_rejected_transfer(self, transfer):
+        message = f"{transfer["ip"]} has rejected your transfer for {path.basename(transfer["path"])}"
+        self.view.create_generic_popup(message)
 
-    def querry_transfer_statuses(self):
-        pass
+    def convert_control_flags_to_string(control_flag):
+        if control_flag == model.Model.control_flags.TRANSFER_ACCEPT:
+            return "Transfer accepted"
+        if control_flag == model.Model.control_flags.TRANSFER_PAUSE:
+            return "Transfer paused"
+        if control_flag == model.Model.control_flags.TRANSFER_RESUME:
+            return "Transfer resumed"
+        if control_flag == model.Model.control_flags.TRANSFER_CANCEL:
+            return "Transfer cancelled"
+
+    def sync_transfers_to_ui(self, transfers):
+        for uuid, transfer in transfers.items():
+            info = {
+                "transfer_uuid": transfer["transfer_uuid"],
+                "ip": transfer["ip"],
+                "file_name": transfer["file_name"],
+                "file_size": transfer["file_size"],
+                "hash": transfer["hash"],
+                "transfer_speed": transfer["transfer_speed"],
+                "transferred": transfer["transferred"],
+                "status": self.convert_control_flags_to_string(transfer["status"]),
+            }
+            self.view.sync_transferring_frame_to_ui(info)
 
     def exception_happened(self, e):
         pass
 
     def launch(self):
+        self.model.launch()
         self.view.launch()
 
-presenterInstance = Presenter()
-presenterInstance.launch()
+BlueTransfer = Presenter()
+BlueTransfer.launch()
