@@ -25,7 +25,7 @@ class Model:
         TRANSFER_FINISH = 8
         # TRANSFER_BROKEN = 9
 
-    def __add_transfer(self, uuid, ip, file_name, file_size, file_hash, is_outbound, file_path=""):
+    def __add_transfer(self, uuid, ip, file_name, file_size, file_hash, is_outbound, socket, file_path=""):
         transfer = {
             "transfer_uuid": uuid,
             "ip": ip,
@@ -69,15 +69,17 @@ class Model:
         while True:
             try:
                 packet_type, transfer_uuid, packet_payload = self.__decode_packet(connected_socket)
-
+                print(packet_type, " ", packet_payload)
                 if packet_type == self.__control_flags.TRANSFER_REQUEST:
 
-                    self.__add_transfer(transfer_uuid, addr[0], packet_payload["file_name"], packet_payload["file_size"], packet_payload["hash"], is_outbound=False)
+                    self.__add_transfer(transfer_uuid, addr[0], packet_payload["file_name"], packet_payload["file_size"], packet_payload["hash"], False, connected_socket)
 
                     self.presenter.present_incoming_transfer_request(self.__transfers[transfer_uuid])
                 
                 if packet_type == self.__control_flags.TRANSFER_PACKET:
+                    print("1")
                     self.__transfers[transfer_uuid]["file_handle"].write(packet_payload)
+                    print("2")
                     self.__transfers[transfer_uuid]["transferred"] += len(packet_payload)
 
                 if packet_type == self.__control_flags.TRANSFER_PAUSE:
@@ -93,6 +95,7 @@ class Model:
                     break
 
                 if packet_type == self.__control_flags.TRANSFER_FINISH:
+                    print("3")
                     self.__transfers[transfer_uuid]["status"] = self.__control_flags.TRANSFER_FINISH
                     self.__transfers[transfer_uuid]["file_handle"].close()
                     break
@@ -101,6 +104,7 @@ class Model:
 
             # TODO: more rigorous exception handling
             except Exception as e:
+                print(e)
                 # self.__transfers[transfer_uuid]["file_handle"].close()
                 self.presenter.exception_happened(e)
                 break
@@ -119,10 +123,10 @@ class Model:
             "hash": file_hash
         }
 
-        uuid = uuid4().bytes
+        uuid = uuid4()
 
         data = json.dumps(data).encode("utf-8")
-        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_REQUEST.value, uuid, len(data)) + data
+        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_REQUEST.value, uuid.bytes, len(data)) + data
 
         return header, uuid, file_name, file_size, file_hash
 
@@ -131,28 +135,33 @@ class Model:
 
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
-        header = struct.pack("!B16sI", type.value, uuid, 0)
+        header = struct.pack("!B16sI", type.value, uuid.bytes, 0)
         return header
 
     def __create_transfer_packet_header(self, uuid, payload_length):
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
-        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_PACKET.value, uuid, payload_length)
+        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_PACKET.value, uuid.bytes, payload_length)
         return header
     
     def __transfer_file(self, connected_socket, uuid, file_path):
         chunk_size = 4096
         header = self.__create_transfer_packet_header(uuid, chunk_size)
-        with open(file_path, 'rb') as file:
+        with self.__transfers[uuid]["file_handle"] as file:
             while chunk := file.read(chunk_size):
                 if self.__transfers[uuid]["status"] == self.__control_flags.TRANSFER_CANCEL:
                     break
 
-                if self.__transfers[uuid]["staus"] == self.message_type.TRANSFER_PAUSE:
+                if self.__transfers[uuid]["status"] == self.__control_flags.TRANSFER_PAUSE:
                     self.__transfers[uuid]["pause_condition"].wait()
 
                 connected_socket.send(header + chunk)
                 self.__transfers[uuid]["transferred"] += len(chunk)
+
+        finish_packet = self.__create_transfer_control_packet(uuid, self.__control_flags.TRANSFER_FINISH)
+        connected_socket.send(finish_packet)
+        print("finished")
+
 
     def initiate_transfer(self, ip, file_path):
 
@@ -160,18 +169,19 @@ class Model:
         sender_socket.settimeout(60)
         header, uuid, file_name, file_size, file_hash = self.__create_file_info_header_packet(file_path)
         
-        self.__add_transfer(uuid, ip, file_name, file_size, file_hash, is_outbound=True, file_path=file_path)
+        self.__add_transfer(uuid, ip, file_name, file_size, file_hash, True, sender_socket, file_path=file_path)
 
         sender_socket.connect((ip, self.remote_port))
         sender_socket.send(header)
 
         packet_type, _, _ = self.__decode_packet(sender_socket)
         
-        if packet_type == self.message_type.TRANSFER_REJECT:
+        if packet_type == self.__control_flags.TRANSFER_REJECT:
             self.presenter.present_rejected_transfer(self.__transfers[uuid])
             return
         else:
             sender_socket.setblocking(True)
+            self.__transfers[uuid]["file_handle"] = open(file_path, "rb")
             threading.Thread(target=self.__transfer_file, args=(sender_socket, uuid, file_path), daemon=True).start()
             threading.Thread(target=self.__responde_to_messages, args=(sender_socket, (ip, self.remote_port)), daemon=True).start()
 
@@ -180,8 +190,9 @@ class Model:
 
         self.__transfers[uuid]["status"] = self.__control_flags.TRANSFER_ACCEPT
 
-        file_path = dir_path + self.__transfers["uuid"]["file_name"]
-        self.__transfers["uuid"]["path"] = file_path
+        file_path = dir_path + "/" + self.__transfers[uuid]["file_name"]
+        self.__transfers[uuid]["path"] = file_path
+        self.__transfers[uuid]["file_handle"] = open(file_path, "wb")
 
         self.__transfers[uuid]["socket"].send(accept_packet)
 
@@ -196,10 +207,10 @@ class Model:
         self.__transfers[uuid]["socket"].send(cancel_packet)
 
     def toggle_transfer_pause(self, uuid):
-        if self.__transfers[uuid]["status"] == self.__control_flags.TRANSFER_ACCEPT or self.__transfers[uuid]["status"] == self.message_type.TRANSFER_RESUME:
-            self.__transfers[uuid]["status"] = self.message_type.TRANSFER_PAUSE
+        if self.__transfers[uuid]["status"] == self.__control_flags.TRANSFER_ACCEPT or self.__transfers[uuid]["status"] == self.__control_flags.TRANSFER_RESUME:
+            self.__transfers[uuid]["status"] = self.__control_flags.TRANSFER_PAUSE
         else:
-            self.__transfers[uuid]["status"] = self.message_type.TRANSFER_RESUME
+            self.__transfers[uuid]["status"] = self.__control_flags.TRANSFER_RESUME
             self.__transfers[uuid]["status"].notify()
 
     def get_active_transfers(self):

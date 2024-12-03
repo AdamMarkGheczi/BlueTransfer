@@ -1,10 +1,13 @@
 import model, view, threading
 from os import path
 
+import sys
+
+
 class Presenter:
-    def __init__(self):
-        self.view = view.TransferApp(self)
-        self.model = model.Model(self)
+    def __init__(self, title, rp, lp):
+        self.view = view.TransferApp(title, self)
+        self.model = model.Model(self, remote_port=rp, local_port=lp)
         
     # View
     def accept_inbound_transfer(self, uuid, dir_path):
@@ -14,7 +17,8 @@ class Presenter:
         self.model.reject_transfer(uuid)
     
     def send_transfer_request(self, destination_ip, file_path):
-        threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
+        # threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
+        self.model.initiate_transfer(destination_ip, file_path)
 
     def toggle_pause_transfer(self, uuid):
         self.model.toggle_transfer_pause(uuid)
@@ -38,14 +42,14 @@ class Presenter:
         message = f"{transfer["ip"]} has rejected your transfer for {path.basename(transfer["path"])}"
         self.view.create_generic_popup(message)
 
-    def convert_control_flags_to_string(control_flag):
-        if control_flag == model.Model.control_flags.TRANSFER_ACCEPT:
+    def convert_control_flags_to_string(self, control_flag):
+        if control_flag == self.model.__control_flags.TRANSFER_ACCEPT:
             return "Transfer accepted"
-        if control_flag == model.Model.control_flags.TRANSFER_PAUSE:
+        if control_flag == self.model.__control_flags.TRANSFER_PAUSE:
             return "Transfer paused"
-        if control_flag == model.Model.control_flags.TRANSFER_RESUME:
+        if control_flag == self.model.__control_flags.TRANSFER_RESUME:
             return "Transfer resumed"
-        if control_flag == model.Model.control_flags.TRANSFER_CANCEL:
+        if control_flag == self.model.__control_flags.TRANSFER_CANCEL:
             return "Transfer cancelled"
 
     def sync_transfers_to_ui(self, transfers):
@@ -69,5 +73,14 @@ class Presenter:
         self.model.launch()
         self.view.launch()
 
-BlueTransfer = Presenter()
-BlueTransfer.launch()
+
+if len(sys.argv) > 1:
+    local_port = sys.argv[1]
+    remote_port = sys.argv[2]
+    title= sys.argv[3]
+    BlueTransfer = Presenter(title, int(remote_port), int(local_port))
+    BlueTransfer.launch()
+else:
+    BlueTransfer = Presenter()
+    BlueTransfer.launch()
+

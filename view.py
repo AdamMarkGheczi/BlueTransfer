@@ -6,11 +6,12 @@ customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("dark-blue")
 
 class TransferApp:
-    def __init__(self, presenter):
+    def __init__(self, title, presenter):
         self.presenter = presenter
         self.root = customtkinter.CTk()
         self.root.geometry("850x500")
-        self.root.title("BlueTransfer")
+        # self.root.title("BlueTransfer")
+        self.root.title(title)
 
         self.transfer_frames = {}
         # Main Tab
@@ -77,7 +78,6 @@ class TransferApp:
         popup.geometry(f"+{self.root.winfo_rootx() + 100}+{self.root.winfo_rooty() - 10}")
         popup.resizable(False, False)
         popup.after(100, lambda: (popup.focus_force()))
-        popup.pack(pady=10, padx=10, fill="x")
 
         transfer_uuid = info["transfer_uuid"]
         ip = info["ip"]
