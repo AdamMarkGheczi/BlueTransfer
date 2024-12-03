@@ -17,8 +17,7 @@ class Presenter:
         self.model.reject_transfer(uuid)
     
     def send_transfer_request(self, destination_ip, file_path):
-        # threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
-        self.model.initiate_transfer(destination_ip, file_path)
+        threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
 
     def toggle_pause_transfer(self, uuid):
         self.model.toggle_transfer_pause(uuid)
@@ -43,16 +42,18 @@ class Presenter:
         self.view.create_generic_popup(message)
 
     def convert_control_flags_to_string(self, control_flag):
-        if control_flag == self.model.__control_flags.TRANSFER_ACCEPT:
+        
+        if control_flag == self.model._Model__control_flags.TRANSFER_ACCEPT.TRANSFER_ACCEPT:
             return "Transfer accepted"
-        if control_flag == self.model.__control_flags.TRANSFER_PAUSE:
+        if control_flag == self.model._Model__control_flags.TRANSFER_PAUSE.TRANSFER_PAUSE:
             return "Transfer paused"
-        if control_flag == self.model.__control_flags.TRANSFER_RESUME:
+        if control_flag == self.model._Model__control_flags.TRANSFER_RESUME.TRANSFER_RESUME:
             return "Transfer resumed"
-        if control_flag == self.model.__control_flags.TRANSFER_CANCEL:
+        if control_flag == self.model._Model__control_flags.TRANSFER_CANCEL.TRANSFER_CANCEL:
             return "Transfer cancelled"
 
     def sync_transfers_to_ui(self, transfers):
+ 
         for uuid, transfer in transfers.items():
             info = {
                 "transfer_uuid": transfer["transfer_uuid"],
@@ -60,6 +61,7 @@ class Presenter:
                 "file_name": transfer["file_name"],
                 "file_size": transfer["file_size"],
                 "hash": transfer["hash"],
+                "is_outbound": transfer["is_outbound"],
                 "transfer_speed": transfer["transfer_speed"],
                 "transferred": transfer["transferred"],
                 "status": self.convert_control_flags_to_string(transfer["status"]),
@@ -67,7 +69,7 @@ class Presenter:
             self.view.sync_transferring_frame_to_ui(info)
 
     def exception_happened(self, e):
-        pass
+        self.view.create_generic_popup(e, "An exception occured")
 
     def launch(self):
         self.model.launch()

@@ -76,7 +76,6 @@ class TransferApp:
         popup.title("File Transfer Request")
         popup.geometry("400x320")
         popup.geometry(f"+{self.root.winfo_rootx() + 100}+{self.root.winfo_rooty() - 10}")
-        popup.resizable(False, False)
         popup.after(100, lambda: (popup.focus_force()))
 
         transfer_uuid = info["transfer_uuid"]
@@ -161,34 +160,45 @@ class TransferApp:
         is_outbound = info["is_outbound"]
         status = info["status"]
 
-        if not self.transfer_frames[transfer_uuid].get():
+        if not self.transfer_frames.get(transfer_uuid):
+            frame = None
             if is_outbound:
                 frame = customtkinter.CTkFrame(self.sending_list)
             else:
                 frame = customtkinter.CTkFrame(self.receiving_list)
 
-            self.transfer_frames[transfer_uuid] = frame
-            frame.pack(fill="x", padx=5, pady=5)
-
+            frame.pack(fill="x", pady=5)
+            
             info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
 
             info_label = customtkinter.CTkLabel(frame, text=info_text)
             info_label.pack(side="left", fill="x", expand=True, padx=5)
 
-            pause_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=self.presenter.toggle_pause_transfer(info))
+            self.transfer_frames[transfer_uuid] = {
+                "frame": frame,
+                "label": info_label
+            }
+
+            def handle_pause_button():
+                self.presenter.toggle_pause_transfer(info)
+
+            def handle_cancel_button():
+                self.presenter.cancel_transfer(info)
+
+            pause_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=handle_pause_button)
             pause_button.pack(side="right", padx=5)
 
-            cancel_button = customtkinter.CTkButton(frame, text="Cancel", width=50, command=self.presenter.cancel_transfer(info))
+            cancel_button = customtkinter.CTkButton(frame, text="Cancel", width=50, command=handle_cancel_button)
             cancel_button.pack(side="right", padx=5)
         else:
             info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
             
-            frame = self.transfer_frames[transfer_uuid]
-            info_label = frame.children["info_label"]
+            info_label = self.transfer_frames[transfer_uuid]["label"]
             info_label.configure(text=info_text)
 
+
     def delete_transferring_frame_ui(self, transfer_uuid):
-        self.transfer_frames[transfer_uuid].destroy()
+        self.transfer_frames[transfer_uuid]["frame"].destroy()
         del self.transfer_frames[transfer_uuid]
 
     def launch(self):
