@@ -2,7 +2,7 @@ import threading, json, socket, struct, time
 from os import path
 from misc import sha1_chunks
 from enum import Enum
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 class Model:
     def __init__(self, presenter, remote_port = 15555, local_port = 15555):
@@ -53,10 +53,14 @@ class Model:
     def __decode_packet(self, socket):
         """Returns packet_type, transfer_uuid, packet_payload"""
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
-        packet = socket.recv(1 + 128 + 4) 
+        packet = socket.recv(1 + 16 + 4) 
         packet_type, transfer_uuid, payload_length = struct.unpack('!B16sI', packet)
+        transfer_uuid = UUID(bytes=transfer_uuid)
         packet_type = self.__control_flags(packet_type)
         packet_payload = socket.recv(payload_length)
+
+        if not packet_type == self.__control_flags.TRANSFER_PACKET and payload_length != 0:
+            packet_payload = json.loads(packet_payload.decode('utf-8'))
 
         return packet_type, transfer_uuid, packet_payload
 
@@ -67,9 +71,8 @@ class Model:
                 packet_type, transfer_uuid, packet_payload = self.__decode_packet(connected_socket)
 
                 if packet_type == self.__control_flags.TRANSFER_REQUEST:
-                    packet_payload = json.loads(packet_payload)
 
-                    self.__add_transfer(transfer_uuid, addr[0], packet_payload["file_name"], packet_payload["file_size"], packet_payload["file_has"], is_outbound=False)
+                    self.__add_transfer(transfer_uuid, addr[0], packet_payload["file_name"], packet_payload["file_size"], packet_payload["hash"], is_outbound=False)
 
                     self.presenter.present_incoming_transfer_request(self.__transfers[transfer_uuid])
                 
@@ -98,12 +101,12 @@ class Model:
 
             # TODO: more rigorous exception handling
             except Exception as e:
-                self.__transfers[transfer_uuid]["file_handle"].close()
-                self.presenter.esception_happened(e)
+                # self.__transfers[transfer_uuid]["file_handle"].close()
+                self.presenter.exception_happened(e)
                 break
 
     def __create_file_info_header_packet(self, file_path):
-        """Returns the header, uuid, file_name, file_size, file_hash"""
+        """Returns the header, uuid, file_name, file_size, hash"""
         file_name = path.basename(file_path)
         file_size = path.getsize(file_path)
         file_hash = sha1_chunks(file_path)
@@ -168,6 +171,7 @@ class Model:
             self.presenter.present_rejected_transfer(self.__transfers[uuid])
             return
         else:
+            sender_socket.setblocking(True)
             threading.Thread(target=self.__transfer_file, args=(sender_socket, uuid, file_path), daemon=True).start()
             threading.Thread(target=self.__responde_to_messages, args=(sender_socket, (ip, self.remote_port)), daemon=True).start()
 

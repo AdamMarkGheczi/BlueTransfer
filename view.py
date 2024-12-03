@@ -73,10 +73,12 @@ class TransferApp:
         '''info dictionary: transfer_uuid, ip, file_name, file_size, hash'''
         popup = customtkinter.CTkToplevel()
         popup.title("File Transfer Request")
+        popup.geometry("400x320")
         popup.geometry(f"+{self.root.winfo_rootx() + 100}+{self.root.winfo_rooty() - 10}")
         popup.resizable(False, False)
         popup.after(100, lambda: (popup.focus_force()))
-        
+        popup.pack(pady=10, padx=10, fill="x")
+
         transfer_uuid = info["transfer_uuid"]
         ip = info["ip"]
         file_name = info["file_name"]
