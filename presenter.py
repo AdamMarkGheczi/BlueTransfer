@@ -14,7 +14,7 @@ class Presenter:
         self.model.reject_transfer(uuid)
     
     def send_transfer_request(self, destination_ip, file_path):
-        self.model.initiate_transfer(destination_ip, file_path)
+        threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
 
     def toggle_pause_transfer(self, uuid):
         self.model.toggle_transfer_pause(uuid)

@@ -5,15 +5,16 @@ from enum import Enum
 from uuid import uuid4
 
 class Model:
-    def __init__(self, presenter, port = 15556):
+    def __init__(self, presenter, remote_port = 15555, local_port = 15555):
         self.presenter = presenter
-        self.port = port
+        self.remote_port = remote_port
+        self.local_port = local_port
         self.__transfers = {}
         self.listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener_socket.setblocking(True)
-        self.listener_socket.bind(("0.0.0.0", port))
+        self.listener_socket.bind(("0.0.0.0", local_port))
 
-    class control_flags(Enum):
+    class __control_flags(Enum):
         TRANSFER_REQUEST = 1
         TRANSFER_ACCEPT = 2
         TRANSFER_REJECT = 3
@@ -43,10 +44,10 @@ class Model:
 
         self.__transfers[uuid] = transfer
 
-    def listen_for_connections(self, listener_socket):
-        listener_socket.listen()
+    def listen_for_connections(self):
+        self.listener_socket.listen()
         while True:
-            other_socket, addr = listener_socket.accept()
+            other_socket, addr = self.listener_socket.accept()
             threading.Thread(target=self.__responde_to_messages, args=(other_socket, addr)).start()
 
     def __decode_packet(self, socket):
@@ -115,25 +116,25 @@ class Model:
             "hash": file_hash
         }
 
-        uuid = uuid4()
+        uuid = uuid4().bytes
 
         data = json.dumps(data).encode("utf-8")
-        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_REQUEST, uuid, len(data), data)
+        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_REQUEST.value, uuid, len(data)) + data
 
-        return header, uuid
+        return header, uuid, file_name, file_size, file_hash
 
     def __create_transfer_control_packet(self, uuid, type):
         """Returns the transfer control packet for a uuid"""
 
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
-        header = struct.pack("!B16sI", type, uuid, 0)
+        header = struct.pack("!B16sI", type.value, uuid, 0)
         return header
 
     def __create_transfer_packet_header(self, uuid, payload_length):
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
 
-        header = struct.pack("!B16sI", type, uuid, payload_length)
+        header = struct.pack("!B16sI", self.__control_flags.TRANSFER_PACKET.value, uuid, payload_length)
         return header
     
     def __transfer_file(self, connected_socket, uuid, file_path):
@@ -156,9 +157,9 @@ class Model:
         sender_socket.settimeout(60)
         header, uuid, file_name, file_size, file_hash = self.__create_file_info_header_packet(file_path)
         
-        self.__add_transfer(uuid, ip, file_name, file_size, file_hash, file_path, is_outbound=True)
+        self.__add_transfer(uuid, ip, file_name, file_size, file_hash, is_outbound=True, file_path=file_path)
 
-        sender_socket.connect((ip, self.port))
+        sender_socket.connect((ip, self.remote_port))
         sender_socket.send(header)
 
         packet_type, _, _ = self.__decode_packet(sender_socket)
@@ -168,7 +169,7 @@ class Model:
             return
         else:
             threading.Thread(target=self.__transfer_file, args=(sender_socket, uuid, file_path), daemon=True).start()
-            threading.Thread(target=self.__responde_to_messages, args=(sender_socket, (ip, self.port)), daemon=True).start()
+            threading.Thread(target=self.__responde_to_messages, args=(sender_socket, (ip, self.remote_port)), daemon=True).start()
 
     def accept_transfer(self, uuid, dir_path):
         accept_packet = self.__create_transfer_control_packet(uuid, self.__control_flags.TRANSFER_ACCEPT)
@@ -227,5 +228,5 @@ class Model:
 
 
     def launch(self):
-        threading.Thread(target=self.listen_for_connections, args=(self.listener_socket), daemon=True).start()
+        threading.Thread(target=self.listen_for_connections, daemon=True).start()
         threading.Thread(target=self.update_transfer_info, daemon=True).start()
