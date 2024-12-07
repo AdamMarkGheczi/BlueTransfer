@@ -112,20 +112,20 @@ class TransferApp:
         file_sender_window.title("Initiate Transfer")
         file_sender_window.geometry("400x320")
         file_sender_window.geometry(f"+{self.root.winfo_rootx() + 100}+{self.root.winfo_rooty() - 10}")
-
-        file_sender_window.after(10, lambda: (file_sender_window.focus_force()))
+        file_sender_window.after(10, lambda: file_sender_window.focus_force())
 
         file_label = customtkinter.CTkLabel(file_sender_window, text="No selected file", wraplength=380, anchor="n", justify="center")
         file_label.pack(pady=10, padx=10, fill="x")
 
-        self.file_path = None
-
+        file_path = None
+        
         def browse_file():
+            nonlocal file_path
             path = filedialog.askopenfilename()
             file_sender_window.focus_force()
             if path:
                 file_label.configure(text=f"{path}")
-                self.file_path = path
+                file_path = path
 
         browse_button = customtkinter.CTkButton(file_sender_window, text="Browse File", command=browse_file)
         browse_button.pack(pady=10, padx=10)
@@ -137,13 +137,11 @@ class TransferApp:
         ip_entry.pack(pady=10, padx=10)
 
         def send_transfer_request():
-            destination_ip = ip_entry.get()
-            if not self.file_path or not destination_ip:
+            if not file_path or not ip_entry.get():
                 self.create_generic_popup("Please select a file and enter a valid IP address!")
                 return
-            
-            self.presenter.send_transfer_request(destination_ip, self.file_path)
-                    
+            self.presenter.send_transfer_request(ip_entry.get(), file_path)
+
         request_button = customtkinter.CTkButton(file_sender_window, text="Transfer", command=send_transfer_request)
         request_button.pack(pady=10, padx=10)
 
@@ -160,6 +158,15 @@ class TransferApp:
         is_outbound = info["is_outbound"]
         status = info["status"]
 
+        info_text =  f"{file_name}\n"
+        
+        if is_outbound:
+            info_text += f"To: {ip}\n"
+        else:
+            info_text += f"From: {ip}\n"
+
+        info_text += f"{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
+
         if not self.transfer_frames.get(transfer_uuid):
             frame = None
             if is_outbound:
@@ -169,9 +176,7 @@ class TransferApp:
 
             frame.pack(fill="x", pady=5)
             
-            info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
-
-            info_label = customtkinter.CTkLabel(frame, text=info_text)
+            info_label = customtkinter.CTkLabel(frame, text=info_text, justify="left")
             info_label.pack(side="left", fill="x", expand=True, padx=5)
 
             self.transfer_frames[transfer_uuid] = {
@@ -180,10 +185,10 @@ class TransferApp:
             }
 
             def handle_pause_button():
-                self.presenter.toggle_pause_transfer(info)
+                self.presenter.toggle_pause_transfer(transfer_uuid)
 
             def handle_cancel_button():
-                self.presenter.cancel_transfer(info)
+                self.presenter.cancel_transfer(transfer_uuid)
 
             pause_button = customtkinter.CTkButton(frame, text="Pause", width=50, command=handle_pause_button)
             pause_button.pack(side="right", padx=5)
@@ -191,11 +196,8 @@ class TransferApp:
             cancel_button = customtkinter.CTkButton(frame, text="Cancel", width=50, command=handle_cancel_button)
             cancel_button.pack(side="right", padx=5)
         else:
-            info_text = f"{file_name}\nFrom: {ip}\n{convert_file_size(transferred)}/{convert_file_size(file_size)}\nSpeed: {convert_file_size(transfer_speed)}/s\nSha-1: {hash}\nStatus: {status}"
-            
             info_label = self.transfer_frames[transfer_uuid]["label"]
             info_label.configure(text=info_text)
-
 
     def delete_transferring_frame_ui(self, transfer_uuid):
         self.transfer_frames[transfer_uuid]["frame"].destroy()

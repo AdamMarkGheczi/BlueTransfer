@@ -1,14 +1,26 @@
-closing the request window = cancel
-closing main window = cancel
-add request timeout
-file select window should appear on top
-add timeout to transfer request
+close sockets and break transfers when app is closed
+Work out timeouts for transfer requests
+Notify user when hash check fails
 
-differentiate sending files and receiving files dict
+Optional:
+Ping mode - after pinging can you contact a port on the dest ip that you *haven't* pinged
+Good handling of multiple transfer at the same time
 
-what happens when the receiver is stopped and the sender still sends
-can you reach a vm?
-ping mode - after pinging can you contact a port on the dest ip that you *haven't* pinged
-process_transfer vége: send a confirmation and or check hash
-close transfer windows when transfer is accepted
-close sockets when app is closed
+All GUI bugs
+Remove contacts tab
+More detailed statuses when sending request (calculating hash, sending request, waiting for response)
+Close create_transfer window when transfer is accepted
+
+Exception handlings
+
+Send request timeout - ip cant be reached
+Send request - bad ip format
+
+No permission for saving file
+No permission for writing file
+
+A connection broke while sending
+A connection broke while receiving
+
+File became unreadable
+File Became unwriteable

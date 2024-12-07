@@ -51,6 +51,8 @@ class Presenter:
             return "Transfer resumed"
         if control_flag == self.model._Model__control_flags.TRANSFER_CANCEL.TRANSFER_CANCEL:
             return "Transfer cancelled"
+        if control_flag == self.model._Model__control_flags.TRANSFER_CANCEL.TRANSFER_FINISH:
+            return "Transfer finished"
 
     def sync_transfers_to_ui(self, transfers):
  
