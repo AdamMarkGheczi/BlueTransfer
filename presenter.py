@@ -3,13 +3,11 @@ import view
 import threading
 from os.path import basename
 
-import sys
-
 
 class Presenter:
-    def __init__(self, title, rp, lp):
-        self.view = view.TransferApp(title, self)
-        self.model = model.Model(self, remote_port=rp, local_port=lp)
+    def __init__(self):
+        self.view = view.TransferApp(self)
+        self.model = model.Model(self)
         
     # View
     
@@ -93,14 +91,5 @@ class Presenter:
         self.model.launch()
         self.view.launch()
 
-
-if len(sys.argv) > 1:
-    local_port = sys.argv[1]
-    remote_port = sys.argv[2]
-    title= sys.argv[3]
-    BlueTransfer = Presenter(title, int(remote_port), int(local_port))
-    BlueTransfer.launch()
-else:
-    BlueTransfer = Presenter()
-    BlueTransfer.launch()
-
+BlueTransfer = Presenter()
+BlueTransfer.launch()

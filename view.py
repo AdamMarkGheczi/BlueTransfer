@@ -6,12 +6,11 @@ customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("dark-blue")
 
 class TransferApp:
-    def __init__(self, title, presenter):
+    def __init__(self, presenter):
         self.presenter = presenter
         self.root = customtkinter.CTk()
         self.root.geometry("900x500")
-        # self.root.title("BlueTransfer")
-        self.root.title(title)
+        self.root.title("BlueTransfer")
 
         self.transfer_frames = {}
         self.sending_windows_status_labels = []
