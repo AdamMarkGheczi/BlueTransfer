@@ -1,5 +1,9 @@
-import threading, json, socket, struct, time
-from os import path
+import threading
+import json
+import socket
+import struct
+import time
+from os.path import basename, getsize
 from misc import sha1_chunks
 from enum import Enum
 from uuid import UUID, uuid4
@@ -137,8 +141,8 @@ class Model:
 
     def __create_file_info_header_packet(self, file_path):
         """Returns the header, uuid, file_name, file_size, hash"""
-        file_name = path.basename(file_path)
-        file_size = path.getsize(file_path)
+        file_name = basename(file_path)
+        file_size = getsize(file_path)
         file_hash = sha1_chunks(file_path)
 
         # | 1 B packet type | 16 B UUID | 4 B (uint) payload length | = Header 133 BYTES
@@ -194,7 +198,7 @@ class Model:
     def initiate_transfer(self, ip, file_path, label_index):
         try:
             sender_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sender_socket.settimeout(5)
+            sender_socket.settimeout(60)
             self.presenter.update_send_request_windows_label(label_index, "hashcalc")
             header, uuid, file_name, file_size, file_hash = self.__create_file_info_header_packet(file_path)
             

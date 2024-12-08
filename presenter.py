@@ -1,7 +1,10 @@
-import model, view, threading
-from os import path
+import model
+import view
+import threading
+from os.path import basename
 
 import sys
+
 
 class Presenter:
     def __init__(self, title, rp, lp):
@@ -48,7 +51,7 @@ class Presenter:
         self.view.create_transfer_request_popup(info)
 
     def present_rejected_transfer(self, transfer):
-        message = f"{transfer["ip"]} has rejected your transfer for {path.basename(transfer["path"])}"
+        message = f"{transfer["ip"]} has rejected your transfer for {basename(transfer["path"])}"
         self.view.create_generic_popup(message)
 
     def __convert_control_flags_to_string(self, control_flag):
