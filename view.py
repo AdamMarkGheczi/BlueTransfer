@@ -196,14 +196,10 @@ class TransferApp:
         request_button = customtkinter.CTkButton(file_sender_window, text="Transfer", command=send_transfer_request)
         request_button.pack(pady=10, padx=10)
 
-
-
-
     def update_status_label(self, label_index, text):
         if self.sending_windows_status_labels[label_index]:
             self.sending_windows_status_labels[label_index].configure(text=text)
-
-
+            
     def sync_transferring_frame_to_ui(self, info):
         '''info dictionary: transfer_uuid, ip, hash, file_name, file_size, transfer_speed, transferred, is_outbound, status'''
 

@@ -9,6 +9,7 @@ class Presenter:
         self.model = model.Model(self, remote_port=rp, local_port=lp)
         
     # View
+    
     def accept_inbound_transfer(self, uuid, dir_path):
         self.model.accept_transfer(uuid, dir_path)
 
