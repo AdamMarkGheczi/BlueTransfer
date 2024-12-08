@@ -4,12 +4,8 @@ Notify user when hash check fails
 
 Optional:
 Ping mode - after pinging can you contact a port on the dest ip that you *haven't* pinged
-Good handling of multiple transfer at the same time
 
 All GUI bugs
-Remove contacts tab
-More detailed statuses when sending request (calculating hash, sending request, waiting for response)
-Close create_transfer window when transfer is accepted
 
 Exception handlings
 

@@ -3,7 +3,6 @@ from os import path
 
 import sys
 
-
 class Presenter:
     def __init__(self, title, rp, lp):
         self.view = view.TransferApp(title, self)
@@ -16,8 +15,8 @@ class Presenter:
     def reject_inbound_transfer(self, uuid):
         self.model.reject_transfer(uuid)
     
-    def send_transfer_request(self, destination_ip, file_path):
-        threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path)).start()
+    def send_transfer_request(self, destination_ip, file_path, label_index):
+        threading.Thread(target=self.model.initiate_transfer, args=(destination_ip, file_path, label_index)).start()
 
     def toggle_pause_transfer(self, uuid):
         self.model.toggle_transfer_pause(uuid)
@@ -25,7 +24,17 @@ class Presenter:
     def cancel_transfer(self, uuid):
         self.model.cancel_transfer(uuid)
 
+    def check_for_active_transfers(self):
+        return self.model.check_for_active_transfers()
+
     # Model
+
+    def update_send_request_windows_label(self, label_index, status):
+        text = ""
+        if status == "hashcalc": text = "Calculating SHA-1 hash..."
+        if status == "sendreq": text = "Sending transfer request..."
+        self.view.update_status_label(label_index, text)
+
     def present_incoming_transfer_request(self, transfer):
         info = {
             "transfer_uuid": transfer["transfer_uuid"],
@@ -41,7 +50,7 @@ class Presenter:
         message = f"{transfer["ip"]} has rejected your transfer for {path.basename(transfer["path"])}"
         self.view.create_generic_popup(message)
 
-    def convert_control_flags_to_string(self, control_flag):
+    def __convert_control_flags_to_string(self, control_flag):
         
         if control_flag == self.model._Model__control_flags.TRANSFER_ACCEPT.TRANSFER_ACCEPT:
             return "Transfer accepted"
@@ -66,7 +75,10 @@ class Presenter:
                 "is_outbound": transfer["is_outbound"],
                 "transfer_speed": transfer["transfer_speed"],
                 "transferred": transfer["transferred"],
-                "status": self.convert_control_flags_to_string(transfer["status"]),
+                "status": self.__convert_control_flags_to_string(transfer["status"]),
+                "display_X": transfer["status"] == self.model._Model__control_flags.TRANSFER_BROKEN or
+                    transfer["status"] == self.model._Model__control_flags.TRANSFER_FINISH or
+                    transfer["status"] == self.model._Model__control_flags.TRANSFER_CANCEL 
             }
             self.view.sync_transferring_frame_to_ui(info)
 
