@@ -4,3 +4,6 @@ __pycache__
 Downloads
 Source
 .vscode
+dist
+build
+*.spec
