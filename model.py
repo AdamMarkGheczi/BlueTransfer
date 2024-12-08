@@ -105,8 +105,8 @@ class Model:
                     if self.__transfers[transfer_uuid]["transferred"] == self.__transfers[transfer_uuid]["file_size"]:
                         finish_packet = self.__create_transfer_control_packet(transfer_uuid, self.__control_flags.TRANSFER_FINISH)
                         connected_socket.send(finish_packet)
-                        connected_socket.close()
                         self.__transfers[transfer_uuid]["status"] = self.__control_flags.TRANSFER_FINISH
+                        self.__transfers[transfer_uuid]["file_handle"].close()
                         break
 
                 if packet_type == self.__control_flags.TRANSFER_REJECT:
@@ -124,10 +124,13 @@ class Model:
 
                 if packet_type == self.__control_flags.TRANSFER_CANCEL:
                     self.__transfers[transfer_uuid]["status"] = self.__control_flags.TRANSFER_CANCEL
+                    self.__transfers[transfer_uuid]["file_handle"].close()
+                    self.__transfers[transfer_uuid]["socket"].close()
                     break
 
                 if packet_type == self.__control_flags.TRANSFER_FINISH:
                     self.__transfers[transfer_uuid]["status"] = self.__control_flags.TRANSFER_FINISH
+                    self.__transfers[transfer_uuid]["socket"].close()
                     self.__transfers[transfer_uuid]["file_handle"].close()
                     break
                 if packet_type == self.__control_flags.TRANSFER_BROKEN:
